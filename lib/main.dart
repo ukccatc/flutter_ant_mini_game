@@ -293,7 +293,7 @@ class GameOverOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: AlertDialog(
-        title: const Text("Game Over"),
+        title: Center(child: const Text("Game Over")),
         content: Text("An ant reached the corn!\nYour score: ${game.score}"),
         actions: [
           TextButton(
