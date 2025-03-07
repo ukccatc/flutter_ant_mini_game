@@ -5,15 +5,24 @@ import 'package:flame/input.dart';
 import 'package:flame/components.dart';
 import 'package:flame/flame.dart';
 import 'package:flame/particles.dart';
-import 'package:flutter/material.dart';
 import 'package:flame_audio/flame_audio.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 const int endGameCount = 30;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Force full screen and landscape orientation.
   await Flame.device.fullScreen();
   await Flame.device.setLandscape();
+
+  // (Optional) Additional system call to ensure landscape on some devices:
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.landscapeLeft,
+    DeviceOrientation.landscapeRight,
+  ]);
 
   runApp(const MyApp());
 }
@@ -45,7 +54,7 @@ class MyApp extends StatelessWidget {
 }
 
 class AntSquashGame extends FlameGame with TapDetector {
-  final double antSize = 50.0;
+  final double antSize = 35.0;
   final Random random = Random();
   late Vector2 center;
   bool isGameOver = false;
@@ -56,8 +65,11 @@ class AntSquashGame extends FlameGame with TapDetector {
   @override
   Future<void> onLoad() async {
     await super.onLoad();
+
+    // Set initial center based on game size
     center = size / 2;
-    add(Corn(initialCenter: center));
+
+    add(Corn());
 
     scoreText = TextComponent(
       text: 'Score: 0',
@@ -78,6 +90,13 @@ class AntSquashGame extends FlameGame with TapDetector {
     // Pause the game and show instructions overlay before starting.
     pauseEngine();
     overlays.add('Instructions');
+  }
+
+  @override
+  void onGameResize(Vector2 newSize) {
+    super.onGameResize(newSize);
+    // Keep our center updated if the screen size changes
+    center = newSize / 2;
   }
 
   /// Called when the player taps "Start Game" on the instructions overlay.
@@ -134,6 +153,7 @@ class AntSquashGame extends FlameGame with TapDetector {
         ant.removeFromParent();
         score++;
         scoreText.text = 'Score: $score';
+
         if (score >= endGameCount) {
           winGame();
           break;
@@ -167,7 +187,7 @@ class Ant extends SpriteComponent with HasGameRef<AntSquashGame> {
     required Random random,
     required Vector2 center,
   }) {
-    bool isAnt = random.nextBool();
+    final bool isAnt = random.nextBool();
     return Ant._internal(
       antSize: antSize,
       random: random,
@@ -183,6 +203,8 @@ class Ant extends SpriteComponent with HasGameRef<AntSquashGame> {
     sprite = await Sprite.load('$enemyType.png');
     anchor = Anchor.center;
     position = getRandomEdgePosition();
+
+    // Slightly different angles depending on the enemy type
     if (enemyType == 'bug') {
       angle = atan2(center.y - position.y, center.x - position.x) + pi / 2;
     } else {
@@ -212,10 +234,10 @@ class Ant extends SpriteComponent with HasGameRef<AntSquashGame> {
     if (gameRef.isGameOver) return;
 
     final corn = gameRef.children.whereType<Corn>().first;
-
     final direction = (corn.position - position).normalized();
     position += direction * speed * dt;
 
+    // If the ant reaches the corn, end the game
     if (position.distanceTo(corn.position) < 3) {
       gameRef.endGame();
       removeFromParent();
@@ -223,10 +245,8 @@ class Ant extends SpriteComponent with HasGameRef<AntSquashGame> {
   }
 }
 
-class Corn extends SpriteComponent {
-  final Vector2 initialCenter;
-
-  Corn({required this.initialCenter});
+class Corn extends SpriteComponent with HasGameRef<AntSquashGame> {
+  Corn();
 
   @override
   Future<void> onLoad() async {
@@ -234,7 +254,14 @@ class Corn extends SpriteComponent {
     sprite = await Sprite.load('corn.png');
     size = Vector2.all(60);
     anchor = Anchor.center;
-    position = initialCenter;
+    position = gameRef.size / 2;
+  }
+
+  // Keep corn centered if the screen size changes
+  @override
+  void onGameResize(Vector2 newSize) {
+    super.onGameResize(newSize);
+    position = newSize / 2;
   }
 }
 
@@ -268,7 +295,11 @@ class WiderParticle extends Particle {
   final double height;
   final Paint paint;
 
-  WiderParticle({required this.width, required this.height, required this.paint});
+  WiderParticle({
+    required this.width,
+    required this.height,
+    required this.paint,
+  });
 
   @override
   void render(Canvas canvas) {
@@ -291,7 +322,7 @@ class GameOverOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: AlertDialog(
-        title: Center(child: const Text("Game Over")),
+        title: const Center(child: Text("Game Over")),
         content: Text("An ant reached the corn!\nYour score: ${game.score}"),
         actions: [
           TextButton(
@@ -318,7 +349,7 @@ class CongratsOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: AlertDialog(
-        title: Center(child: const Text("Congratulations!")),
+        title: const Center(child: Text("Congratulations!")),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
