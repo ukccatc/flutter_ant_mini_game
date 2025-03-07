@@ -7,6 +7,8 @@ import 'package:flame/flame.dart';
 import 'package:flutter/material.dart';
 import 'package:flame_audio/flame_audio.dart'; // Ensure this package is added in pubspec.yaml
 
+const int endGameCount = 5;
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Flame.device.fullScreen();
@@ -28,9 +30,8 @@ class MyApp extends StatelessWidget {
           game: AntSquashGame(),
           backgroundBuilder: (context) => Container(color: Colors.white),
           overlayBuilderMap: {
-
-            'GameOver': (context, AntSquashGame game) =>
-                GameOverOverlay(game: game),
+            'GameOver': (context, AntSquashGame game) => GameOverOverlay(game: game),
+            'Congrats': (context, AntSquashGame game) => CongratsOverlay(game: game),
           },
         ),
       ),
@@ -55,7 +56,7 @@ class AntSquashGame extends FlameGame with TapDetector {
 
     scoreText = TextComponent(
       text: 'Score: 0',
-      position: Vector2(10, 10),
+      position: Vector2(30, 15),
       anchor: Anchor.topLeft,
       textRenderer: TextPaint(
         style: const TextStyle(
@@ -74,8 +75,7 @@ class AntSquashGame extends FlameGame with TapDetector {
 
   void spawnAntsContinuously() async {
     while (!isGameOver) {
-      await Future.delayed(
-          Duration(milliseconds: random.nextInt(1000) + 500));
+      await Future.delayed(Duration(milliseconds: random.nextInt(1000) + 500));
       if (!isGameOver) {
         add(Ant(antSize: antSize, random: random, center: center));
       }
@@ -85,7 +85,15 @@ class AntSquashGame extends FlameGame with TapDetector {
   void endGame() {
     isGameOver = true;
     pauseEngine();
+    removeAll(children.whereType<Ant>());
     overlays.add('GameOver');
+  }
+
+  void winGame() {
+    isGameOver = true;
+    pauseEngine();
+    removeAll(children.whereType<Ant>());
+    overlays.add('Congrats');
   }
 
   void restartGame() {
@@ -93,6 +101,7 @@ class AntSquashGame extends FlameGame with TapDetector {
     score = 0;
     scoreText.text = 'Score: 0';
     overlays.remove('GameOver');
+    overlays.remove('Congrats');
     resumeEngine();
     removeAll(children.whereType<Ant>());
     spawnAntsContinuously();
@@ -109,6 +118,10 @@ class AntSquashGame extends FlameGame with TapDetector {
         ant.removeFromParent();
         score++;
         scoreText.text = 'Score: $score';
+        if (score >= endGameCount) {
+          winGame();
+          break;
+        }
         break;
       }
     }
@@ -119,19 +132,45 @@ class Ant extends SpriteComponent with HasGameRef<AntSquashGame> {
   final double antSize;
   final Random random;
   final Vector2 center;
-  final double speed = 100.0;
+  final double speed;
+  final String enemyType;
 
-  Ant({required this.antSize, required this.random, required this.center}) {
+  Ant._internal({
+    required this.antSize,
+    required this.random,
+    required this.center,
+    required this.enemyType,
+    required this.speed,
+  }) {
     size = Vector2.all(antSize);
+  }
+
+  factory Ant({
+    required double antSize,
+    required Random random,
+    required Vector2 center,
+  }) {
+    bool isAnt = random.nextBool();
+    return Ant._internal(
+      antSize: antSize,
+      random: random,
+      center: center,
+      enemyType: isAnt ? 'ant' : 'bug',
+      speed: isAnt ? 90.0 : 70.0,
+    );
   }
 
   @override
   Future<void> onLoad() async {
     await super.onLoad();
-    sprite = await Sprite.load('ant.png');
+    sprite = await Sprite.load('$enemyType.png');
     anchor = Anchor.center;
     position = getRandomEdgePosition();
-    angle = atan2(center.y - position.y, center.x - position.x) + pi / 4;
+    if (enemyType == 'bug') {
+      angle = atan2(center.y - position.y, center.x - position.x) + pi / 2;
+    } else {
+      angle = atan2(center.y - position.y, center.x - position.x) + pi / 4;
+    }
   }
 
   Vector2 getRandomEdgePosition() {
@@ -183,8 +222,6 @@ class Corn extends SpriteComponent {
     anchor = Anchor.center;
     position = initialCenter;
   }
-
-
 }
 
 class GameOverOverlay extends StatelessWidget {
@@ -203,10 +240,39 @@ class GameOverOverlay extends StatelessWidget {
             onPressed: game.restartGame,
             child: const Text("Quit"),
           ),
-          const SizedBox(width: 20), // adjust width as needed
+          const SizedBox(width: 20),
           TextButton(
             onPressed: game.restartGame,
             child: const Text("Restart"),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class CongratsOverlay extends StatelessWidget {
+  final AntSquashGame game;
+
+  const CongratsOverlay({super.key, required this.game});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: AlertDialog(
+        title: Center(child: const Text("Congratulations!")),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.emoji_events, size: 48, color: Colors.amber),
+            const SizedBox(height: 16),
+            Text("You have reached $endGameCount points"),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: game.restartGame,
+            child: const Text("Take your prize!", style: TextStyle(color: Colors.green, fontSize: 18),),
           ),
         ],
       ),
