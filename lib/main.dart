@@ -362,7 +362,7 @@ class InstructionsOverlay extends StatelessWidget {
             Text("Instructions:"),
             Text("• Tap on the ants and bugs to smash them."),
             Text("• Each smash gives you 1 point."),
-            Text("• Avoid letting them reach the corn."),
+            Text("• PROTECT THE CORN."),
             Text("• The goal is to reach a score of 30."),
           ],
         ),
