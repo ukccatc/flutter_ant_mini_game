@@ -1,11 +1,11 @@
 import 'dart:math';
-import 'package:flame/collisions.dart';
 import 'package:flame/events.dart';
 import 'package:flame/game.dart';
 import 'package:flame/input.dart';
 import 'package:flame/components.dart';
 import 'package:flame/flame.dart';
 import 'package:flutter/material.dart';
+import 'package:flame_audio/flame_audio.dart'; // Ensure this package is added in pubspec.yaml
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,10 +23,14 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       home: Scaffold(
+        backgroundColor: Colors.white, // Set background to white
         body: GameWidget(
           game: AntSquashGame(),
+          backgroundBuilder: (context) => Container(color: Colors.white),
           overlayBuilderMap: {
-            'GameOver': (context, AntSquashGame game) => GameOverOverlay(game: game),
+
+            'GameOver': (context, AntSquashGame game) =>
+                GameOverOverlay(game: game),
           },
         ),
       ),
@@ -39,29 +43,39 @@ class AntSquashGame extends FlameGame with TapDetector {
   final Random random = Random();
   late Vector2 center;
   bool isGameOver = false;
+  int score = 0;
+
+  TextComponent scoreText = TextComponent();
 
   @override
   Future<void> onLoad() async {
     await super.onLoad();
     center = size / 2;
-    add(Corn(center: center));
+    add(Corn(initialCenter: center));
+
+    scoreText = TextComponent(
+      text: 'Score: 0',
+      position: Vector2(10, 10),
+      anchor: Anchor.topLeft,
+      textRenderer: TextPaint(
+        style: const TextStyle(
+          color: Colors.black,
+          fontSize: 24,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+    add(scoreText);
+
+    await FlameAudio.audioCache.load('squish.mp3');
+
     spawnAntsContinuously();
-  }
-
-  @override
-  void render(Canvas canvas) {
-    // Draw a white rectangle covering the entire canvas.
-    final rect = Rect.fromLTWH(0, 0, size.x, size.y);
-    final paint = Paint()..color = Colors.white;
-    canvas.drawRect(rect, paint);
-
-    // Render the rest of the game.
-    super.render(canvas);
   }
 
   void spawnAntsContinuously() async {
     while (!isGameOver) {
-      await Future.delayed(Duration(milliseconds: random.nextInt(1000) + 500));
+      await Future.delayed(
+          Duration(milliseconds: random.nextInt(1000) + 500));
       if (!isGameOver) {
         add(Ant(antSize: antSize, random: random, center: center));
       }
@@ -71,12 +85,14 @@ class AntSquashGame extends FlameGame with TapDetector {
   void endGame() {
     isGameOver = true;
     pauseEngine();
-    overlays.add('GameOver'); // Show Game Over UI
+    overlays.add('GameOver');
   }
 
   void restartGame() {
     isGameOver = false;
-    overlays.remove('GameOver'); // Hide Game Over UI
+    score = 0;
+    scoreText.text = 'Score: 0';
+    overlays.remove('GameOver');
     resumeEngine();
     removeAll(children.whereType<Ant>());
     spawnAntsContinuously();
@@ -86,11 +102,13 @@ class AntSquashGame extends FlameGame with TapDetector {
   void onTapDown(TapDownInfo info) {
     final tapPosition = info.eventPosition.global;
 
-    // Inflate each ant's bounding rectangle to make it easier to tap
     for (final ant in children.whereType<Ant>().toList()) {
-      final Rect enlargedHitBox = ant.toRect().inflate(20.0); // Increase the clickable area by 20 pixels on all sides
+      final Rect enlargedHitBox = ant.toRect().inflate(20.0);
       if (enlargedHitBox.contains(tapPosition.toOffset())) {
+        FlameAudio.play('squish.mp3');
         ant.removeFromParent();
+        score++;
+        scoreText.text = 'Score: $score';
         break;
       }
     }
@@ -101,7 +119,7 @@ class Ant extends SpriteComponent with HasGameRef<AntSquashGame> {
   final double antSize;
   final Random random;
   final Vector2 center;
-  final double speed = 100.0; // Pixels per second
+  final double speed = 100.0;
 
   Ant({required this.antSize, required this.random, required this.center}) {
     size = Vector2.all(antSize);
@@ -111,19 +129,24 @@ class Ant extends SpriteComponent with HasGameRef<AntSquashGame> {
   Future<void> onLoad() async {
     await super.onLoad();
     sprite = await Sprite.load('ant.png');
+    anchor = Anchor.center;
     position = getRandomEdgePosition();
+    angle = atan2(center.y - position.y, center.x - position.x) + pi / 4;
   }
 
   Vector2 getRandomEdgePosition() {
     final screenSize = gameRef.size;
-    int side = random.nextInt(4); // Random side (0 = top, 1 = bottom, 2 = left, 3 = right)
-
-    switch (side) {
-      case 0: return Vector2(random.nextDouble() * (screenSize.x - antSize), 0);
-      case 1: return Vector2(random.nextDouble() * (screenSize.x - antSize), screenSize.y - antSize);
-      case 2: return Vector2(0, random.nextDouble() * (screenSize.y - antSize));
-      case 3: return Vector2(screenSize.x - antSize, random.nextDouble() * (screenSize.y - antSize));
-      default: return Vector2.zero();
+    switch (random.nextInt(4)) {
+      case 0:
+        return Vector2(random.nextDouble() * screenSize.x, 0);
+      case 1:
+        return Vector2(random.nextDouble() * screenSize.x, screenSize.y);
+      case 2:
+        return Vector2(0, random.nextDouble() * screenSize.y);
+      case 3:
+        return Vector2(screenSize.x, random.nextDouble() * screenSize.y);
+      default:
+        return Vector2.zero();
     }
   }
 
@@ -132,41 +155,38 @@ class Ant extends SpriteComponent with HasGameRef<AntSquashGame> {
     super.update(dt);
     if (gameRef.isGameOver) return;
 
-    Vector2 direction = (center - position).normalized();
+    // Get the corn component to use its center position
+    final corn = gameRef.children.whereType<Corn>().first;
+
+    // Calculate the direction vector from the ant's position towards the corn's center
+    final direction = (corn.position - position).normalized();
     position += direction * speed * dt;
 
-    if (position.distanceTo(center) < 10) {
+    // End game when the ant's center is near the corn's center
+    if (position.distanceTo(corn.position) < 3) {
       gameRef.endGame();
       removeFromParent();
     }
   }
 }
 
-class Corn extends SpriteComponent with HasGameRef<AntSquashGame>, CollisionCallbacks {
-  final Vector2 center;
+class Corn extends SpriteComponent {
+  final Vector2 initialCenter;
 
-  Corn({required this.center});
+  Corn({required this.initialCenter});
 
   @override
   Future<void> onLoad() async {
     await super.onLoad();
-    anchor = Anchor.center; // Центрирование спрайта
     sprite = await Sprite.load('corn.png');
     size = Vector2.all(60);
-    position = center + Vector2(20, 20);
-
-    // Добавляем hitbox, который больше, чем спрайт
-    // Используем RectangleHitbox.relative, чтобы задать относительный размер и позицию
-    final hitbox = RectangleHitbox.relative(
-      Vector2(1.5, 1.5), // Размер hitbox увеличен на 50%
-      parentSize: size,
-      position: Vector2(1, 1), // Смещение, чтобы центрировать hitbox относительно спрайта
-    );
-    add(hitbox);
+    anchor = Anchor.center;
+    position = initialCenter;
   }
+
+
 }
 
-// Game Over UI using Flame Overlays
 class GameOverOverlay extends StatelessWidget {
   final AntSquashGame game;
 
@@ -177,8 +197,13 @@ class GameOverOverlay extends StatelessWidget {
     return Center(
       child: AlertDialog(
         title: const Text("Game Over"),
-        content: const Text("An ant reached the corn!"),
+        content: Text("An ant reached the corn!\nYour score: ${game.score}"),
         actions: [
+          TextButton(
+            onPressed: game.restartGame,
+            child: const Text("Quit"),
+          ),
+          const SizedBox(width: 20), // adjust width as needed
           TextButton(
             onPressed: game.restartGame,
             child: const Text("Restart"),
