@@ -162,7 +162,7 @@ packages:
     source: hosted
     version: "1.25.0"
   flame_audio:
-    dependency: "direct dev"
+    dependency: "direct main"
     description:
       name: flame_audio
       sha256: "03baa6a2b63fc86c73cd3ae0436d6bcb1b3292ade7341c120b808c0c1bf297f5"

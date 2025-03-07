@@ -6,9 +6,9 @@ import 'package:flame/components.dart';
 import 'package:flame/flame.dart';
 import 'package:flame/particles.dart';
 import 'package:flutter/material.dart';
-import 'package:flame_audio/flame_audio.dart'; // Ensure this package is added in pubspec.yaml
+import 'package:flame_audio/flame_audio.dart';
 
-const int endGameCount = 30; // Goal is now 30
+const int endGameCount = 30;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -147,6 +147,7 @@ class AntSquashGame extends FlameGame with TapDetector {
 class Ant extends SpriteComponent with HasGameRef<AntSquashGame> {
   final double antSize;
   final Random random;
+  @override
   final Vector2 center;
   final double speed;
   final String enemyType;
@@ -210,14 +211,11 @@ class Ant extends SpriteComponent with HasGameRef<AntSquashGame> {
     super.update(dt);
     if (gameRef.isGameOver) return;
 
-    // Get the corn component to use its center position
     final corn = gameRef.children.whereType<Corn>().first;
 
-    // Calculate the direction vector from the ant's position towards the corn's center
     final direction = (corn.position - position).normalized();
     position += direction * speed * dt;
 
-    // End game when the ant's center is near the corn's center
     if (position.distanceTo(corn.position) < 3) {
       gameRef.endGame();
       removeFromParent();
