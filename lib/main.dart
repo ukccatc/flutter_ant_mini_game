@@ -4,10 +4,11 @@ import 'package:flame/game.dart';
 import 'package:flame/input.dart';
 import 'package:flame/components.dart';
 import 'package:flame/flame.dart';
+import 'package:flame/particles.dart';
 import 'package:flutter/material.dart';
 import 'package:flame_audio/flame_audio.dart'; // Ensure this package is added in pubspec.yaml
 
-const int endGameCount = 5;
+const int endGameCount = 30; // Goal is now 30
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,13 +26,17 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       home: Scaffold(
-        backgroundColor: Colors.white, // Set background to white
+        backgroundColor: Colors.white,
         body: GameWidget(
           game: AntSquashGame(),
           backgroundBuilder: (context) => Container(color: Colors.white),
           overlayBuilderMap: {
-            'GameOver': (context, AntSquashGame game) => GameOverOverlay(game: game),
-            'Congrats': (context, AntSquashGame game) => CongratsOverlay(game: game),
+            'Instructions': (context, AntSquashGame game) =>
+                InstructionsOverlay(game: game),
+            'GameOver': (context, AntSquashGame game) =>
+                GameOverOverlay(game: game),
+            'Congrats': (context, AntSquashGame game) =>
+                CongratsOverlay(game: game),
           },
         ),
       ),
@@ -70,6 +75,15 @@ class AntSquashGame extends FlameGame with TapDetector {
 
     await FlameAudio.audioCache.load('squish.mp3');
 
+    // Pause the game and show instructions overlay before starting.
+    pauseEngine();
+    overlays.add('Instructions');
+  }
+
+  /// Called when the player taps "Start Game" on the instructions overlay.
+  void startGame() {
+    resumeEngine();
+    overlays.remove('Instructions');
     spawnAntsContinuously();
   }
 
@@ -115,6 +129,8 @@ class AntSquashGame extends FlameGame with TapDetector {
       final Rect enlargedHitBox = ant.toRect().inflate(20.0);
       if (enlargedHitBox.contains(tapPosition.toOffset())) {
         FlameAudio.play('squish.mp3');
+        // Add a smash effect at the ant's position.
+        add(SmashEffect(position: ant.position.clone()));
         ant.removeFromParent();
         score++;
         scoreText.text = 'Score: $score';
@@ -224,6 +240,50 @@ class Corn extends SpriteComponent {
   }
 }
 
+class SmashEffect extends ParticleSystemComponent {
+  SmashEffect({required Vector2 position})
+      : super(
+    particle: Particle.generate(
+      count: 30,
+      lifespan: 0.11,
+      generator: (i) {
+        final angle = (2 * pi * i) / 20;
+        return AcceleratedParticle(
+          acceleration: Vector2(cos(angle), sin(angle)) * 150,
+          speed: Vector2(cos(angle), sin(angle)) * 150,
+          child: WiderParticle(
+            width: 7.0,
+            height: 7.0,
+            paint: Paint()..color = Colors.red,
+          ),
+        );
+      },
+    ),
+  ) {
+    this.position = position;
+    anchor = Anchor.center;
+  }
+}
+
+class WiderParticle extends Particle {
+  final double width;
+  final double height;
+  final Paint paint;
+
+  WiderParticle({required this.width, required this.height, required this.paint});
+
+  @override
+  void render(Canvas canvas) {
+    canvas.drawRect(
+      Rect.fromCenter(center: Offset.zero, width: width, height: height),
+      paint,
+    );
+  }
+
+  @override
+  bool update(double dt) => false;
+}
+
 class GameOverOverlay extends StatelessWidget {
   final AntSquashGame game;
 
@@ -272,7 +332,44 @@ class CongratsOverlay extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: game.restartGame,
-            child: const Text("Take your prize!", style: TextStyle(color: Colors.green, fontSize: 18),),
+            child: const Text(
+              "Take your prize!",
+              style: TextStyle(color: Colors.green, fontSize: 18),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class InstructionsOverlay extends StatelessWidget {
+  final AntSquashGame game;
+
+  const InstructionsOverlay({super.key, required this.game});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: AlertDialog(
+        title: const Text("How to Play"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: const [
+            Text("Welcome to Ant Squash Game!"),
+            SizedBox(height: 8),
+            Text("Instructions:"),
+            Text("• Tap on the ants and bugs to smash them."),
+            Text("• Each smash gives you 1 point."),
+            Text("• Avoid letting them reach the corn."),
+            Text("• The goal is to reach a score of 30."),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: game.startGame,
+            child: const Text("Start Game"),
           ),
         ],
       ),
