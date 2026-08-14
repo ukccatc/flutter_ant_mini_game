@@ -70,7 +70,7 @@ class AntSquashGame extends FlameGame with TapDetector {
     // Set initial center based on game size
     center = size / 2;
 
-    add(Corn());
+    add(PicnicTarget());
 
     scoreText = TextComponent(
       text: 'Score: 0',
@@ -172,6 +172,10 @@ class Ant extends SpriteComponent with HasGameRef<AntSquashGame> {
   final Vector2 center;
   final double speed;
   final String enemyType;
+  final double _wobbleAmp;
+  final double _wobbleFreq;
+  final double _speedJitter;
+  double _wobblePhase;
 
   Ant._internal({
     required this.antSize,
@@ -179,7 +183,14 @@ class Ant extends SpriteComponent with HasGameRef<AntSquashGame> {
     required this.center,
     required this.enemyType,
     required this.speed,
-  }) {
+    required double wobbleAmp,
+    required double wobbleFreq,
+    required double speedJitter,
+    required double wobblePhase,
+  })  : _wobbleAmp = wobbleAmp,
+        _wobbleFreq = wobbleFreq,
+        _speedJitter = speedJitter,
+        _wobblePhase = wobblePhase {
     size = Vector2.all(antSize);
   }
 
@@ -194,7 +205,11 @@ class Ant extends SpriteComponent with HasGameRef<AntSquashGame> {
       random: random,
       center: center,
       enemyType: isAnt ? 'ant' : 'bug',
-      speed: isAnt ? 90.0 : 70.0,
+      speed: isAnt ? 88.0 : 64.0,
+      wobbleAmp: isAnt ? 26.0 : 52.0,
+      wobbleFreq: isAnt ? 2.6 : 4.4,
+      speedJitter: 0.82 + random.nextDouble() * 0.4,
+      wobblePhase: random.nextDouble() * pi * 2,
     );
   }
 
@@ -204,29 +219,34 @@ class Ant extends SpriteComponent with HasGameRef<AntSquashGame> {
     sprite = await Sprite.load('$enemyType.png');
     anchor = Anchor.center;
     position = getRandomEdgePosition();
-
-    // Slightly different angles depending on the enemy type
-    if (enemyType == 'bug') {
-      angle = atan2(center.y - position.y, center.x - position.x) + pi / 2;
-    } else {
-      angle = atan2(center.y - position.y, center.x - position.x) + pi / 4;
-    }
+    _faceToward(center - position);
   }
 
   Vector2 getRandomEdgePosition() {
     final screenSize = gameRef.size;
+    final margin = 8.0;
     switch (random.nextInt(4)) {
       case 0:
-        return Vector2(random.nextDouble() * screenSize.x, 0);
+        return Vector2(margin + random.nextDouble() * (screenSize.x - margin * 2), 0);
       case 1:
-        return Vector2(random.nextDouble() * screenSize.x, screenSize.y);
+        return Vector2(
+          margin + random.nextDouble() * (screenSize.x - margin * 2),
+          screenSize.y,
+        );
       case 2:
-        return Vector2(0, random.nextDouble() * screenSize.y);
-      case 3:
-        return Vector2(screenSize.x, random.nextDouble() * screenSize.y);
+        return Vector2(0, margin + random.nextDouble() * (screenSize.y - margin * 2));
       default:
-        return Vector2.zero();
+        return Vector2(
+          screenSize.x,
+          margin + random.nextDouble() * (screenSize.y - margin * 2),
+        );
     }
+  }
+
+  void _faceToward(Vector2 direction) {
+    if (direction.length2 < 0.0001) return;
+    // Sprites are drawn with the head toward the top of the image.
+    angle = atan2(direction.y, direction.x) + pi / 2;
   }
 
   @override
@@ -234,35 +254,54 @@ class Ant extends SpriteComponent with HasGameRef<AntSquashGame> {
     super.update(dt);
     if (gameRef.isGameOver) return;
 
-    final corn = gameRef.children.whereType<Corn>().first;
-    final direction = (corn.position - position).normalized();
-    position += direction * speed * dt;
+    final targets = gameRef.children.whereType<PicnicTarget>();
+    if (targets.isEmpty) return;
+    final target = targets.first;
 
-    // If the ant reaches the corn, end the game
-    if (position.distanceTo(corn.position) < 3) {
+    final toTarget = target.position - position;
+    final reach = target.size.x * 0.42;
+    if (toTarget.length < reach) {
       gameRef.endGame();
       removeFromParent();
+      return;
     }
+
+    final forward = toTarget.normalized();
+    final side = Vector2(-forward.y, forward.x);
+    _wobblePhase += dt * _wobbleFreq;
+    final weave = sin(_wobblePhase) * _wobbleAmp;
+    final velocity = (forward * speed + side * weave) * _speedJitter;
+    position += velocity * dt;
+    _faceToward(velocity);
   }
 }
 
-class Corn extends SpriteComponent with HasGameRef<AntSquashGame> {
-  Corn();
+class PicnicTarget extends SpriteComponent with HasGameRef<AntSquashGame> {
+  PicnicTarget();
+
+  double _pulse = 0;
 
   @override
   Future<void> onLoad() async {
     await super.onLoad();
-    sprite = await Sprite.load('corn.png');
-    size = Vector2.all(60);
+    sprite = await Sprite.load('watermelon.png');
+    size = Vector2.all(72);
     anchor = Anchor.center;
     position = gameRef.size / 2;
   }
 
-  // Keep corn centered if the screen size changes
   @override
   void onGameResize(Vector2 newSize) {
     super.onGameResize(newSize);
     position = newSize / 2;
+  }
+
+  @override
+  void update(double dt) {
+    super.update(dt);
+    _pulse += dt * 2.2;
+    final scale = 1.0 + sin(_pulse) * 0.04;
+    size = Vector2.all(72 * scale);
   }
 }
 
@@ -324,7 +363,7 @@ class GameOverOverlay extends StatelessWidget {
     return Center(
       child: AlertDialog(
         title: const Center(child: Text("Game Over")),
-        content: Text("An ant reached the corn!\nYour score: ${game.score}"),
+        content: Text("An ant reached the picnic!\nYour score: ${game.score}"),
         actions: [
           TextButton(
             onPressed: game.restartGame,
@@ -387,13 +426,21 @@ class InstructionsOverlay extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: const [
-            Text("Welcome to Ant Squash Game!"),
+            Center(
+              child: Image(
+                image: AssetImage('assets/images/logo.png'),
+                width: 72,
+                height: 72,
+              ),
+            ),
+            SizedBox(height: 12),
+            Text("Welcome to Ant Squash!"),
             SizedBox(height: 8),
             Text("Instructions:"),
-            Text("• Tap on the ants and bugs to smash them."),
+            Text("• Tap ants and bugs to smash them."),
             Text("• Each smash gives you 1 point."),
-            Text("• PROTECT THE CORN."),
-            Text("• The goal is to reach a score of 30."),
+            Text("• Protect the watermelon picnic."),
+            Text("• Reach a score of 30 to win."),
           ],
         ),
         actions: [
