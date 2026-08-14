@@ -6,6 +6,7 @@ import 'package:flame/components.dart';
 import 'package:flame/flame.dart';
 import 'package:flame/particles.dart';
 import 'package:flame_audio/flame_audio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -14,15 +15,15 @@ const int endGameCount = 30;
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Force full screen and landscape orientation.
-  await Flame.device.fullScreen();
-  await Flame.device.setLandscape();
-
-  // (Optional) Additional system call to ensure landscape on some devices:
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.landscapeLeft,
-    DeviceOrientation.landscapeRight,
-  ]);
+  // Browsers cannot lock orientation or true fullscreen the same way as phones.
+  if (!kIsWeb) {
+    await Flame.device.fullScreen();
+    await Flame.device.setLandscape();
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+  }
 
   runApp(const MyApp());
 }
