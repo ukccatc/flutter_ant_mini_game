@@ -11,6 +11,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 const int endGameCount = 30;
+const Color _brandGreen = Color(0xFF2E7D4F);
+const Color _brandCream = Color(0xFFF7F1E3);
+const Color _brandInk = Color(0xFF1C241E);
+const Color _brandMuted = Color(0xFF5C6B61);
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -102,9 +106,24 @@ class AntSquashGame extends FlameGame with TapDetector {
 
   /// Called when the player taps "Start Game" on the instructions overlay.
   void startGame() {
-    resumeEngine();
+    isGameOver = false;
+    score = 0;
+    scoreText.text = 'Score: 0';
     overlays.remove('Instructions');
+    overlays.remove('GameOver');
+    overlays.remove('Congrats');
+    removeAll(children.whereType<Ant>());
+    resumeEngine();
     spawnAntsContinuously();
+  }
+
+  void showMenu() {
+    isGameOver = true;
+    pauseEngine();
+    removeAll(children.whereType<Ant>());
+    overlays.remove('GameOver');
+    overlays.remove('Congrats');
+    overlays.add('Instructions');
   }
 
   void spawnAntsContinuously() async {
@@ -219,7 +238,7 @@ class Ant extends SpriteComponent with HasGameRef<AntSquashGame> {
     sprite = await Sprite.load('$enemyType.png');
     anchor = Anchor.center;
     position = getRandomEdgePosition();
-    _faceToward(center - position);
+    _facePicnic(center - position);
   }
 
   Vector2 getRandomEdgePosition() {
@@ -243,10 +262,13 @@ class Ant extends SpriteComponent with HasGameRef<AntSquashGame> {
     }
   }
 
-  void _faceToward(Vector2 direction) {
-    if (direction.length2 < 0.0001) return;
-    // Sprites are drawn with the head toward the top of the image.
-    angle = atan2(direction.y, direction.x) + pi / 2;
+  /// Ant sprite faces top-right; bug sprite faces up. Keep the head aimed
+  /// at the picnic, with a small weave tilt.
+  void _facePicnic(Vector2 toTarget) {
+    if (toTarget.length2 < 0.0001) return;
+    final spriteOffset = enemyType == 'bug' ? pi / 2 : pi / 4;
+    final deviation = sin(_wobblePhase) * 0.28;
+    angle = atan2(toTarget.y, toTarget.x) + spriteOffset + deviation;
   }
 
   @override
@@ -272,7 +294,7 @@ class Ant extends SpriteComponent with HasGameRef<AntSquashGame> {
     final weave = sin(_wobblePhase) * _wobbleAmp;
     final velocity = (forward * speed + side * weave) * _speedJitter;
     position += velocity * dt;
-    _faceToward(velocity);
+    _facePicnic(toTarget);
   }
 }
 
@@ -360,21 +382,45 @@ class GameOverOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: AlertDialog(
-        title: const Center(child: Text("Game Over")),
-        content: Text("An ant reached the picnic!\nYour score: ${game.score}"),
-        actions: [
-          TextButton(
-            onPressed: game.restartGame,
-            child: const Text("Quit"),
-          ),
-          const SizedBox(width: 20),
-          TextButton(
-            onPressed: game.restartGame,
-            child: const Text("Restart"),
-          ),
-        ],
+    return _GameScrim(
+      child: _GameCard(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              "Game Over",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.w800,
+                color: _brandInk,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              "An ant reached the picnic.",
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 16, color: _brandMuted, height: 1.35),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              "${game.score}",
+              style: const TextStyle(
+                fontSize: 44,
+                fontWeight: FontWeight.w800,
+                color: _brandGreen,
+              ),
+            ),
+            const Text(
+              "score",
+              style: TextStyle(fontSize: 14, color: _brandMuted),
+            ),
+            const SizedBox(height: 24),
+            _PrimaryButton(label: "Play again", onPressed: game.restartGame),
+            const SizedBox(height: 8),
+            _TextAction(label: "Back to menu", onPressed: game.showMenu),
+          ],
+        ),
       ),
     );
   }
@@ -387,26 +433,34 @@ class CongratsOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: AlertDialog(
-        title: const Center(child: Text("Congratulations!")),
-        content: Column(
+    return _GameScrim(
+      child: _GameCard(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.emoji_events, size: 48, color: Colors.amber),
-            const SizedBox(height: 16),
-            Text("You have reached $endGameCount points"),
+            const Icon(Icons.emoji_events, size: 52, color: Color(0xFFE0A800)),
+            const SizedBox(height: 12),
+            const Text(
+              "Picnic saved!",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.w800,
+                color: _brandInk,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              "You reached $endGameCount points.",
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 16, color: _brandMuted, height: 1.35),
+            ),
+            const SizedBox(height: 24),
+            _PrimaryButton(label: "Play again", onPressed: game.restartGame),
+            const SizedBox(height: 8),
+            _TextAction(label: "Back to menu", onPressed: game.showMenu),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: game.restartGame,
-            child: const Text(
-              "Take your prize!",
-              style: TextStyle(color: Colors.green, fontSize: 18),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -419,37 +473,165 @@ class InstructionsOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: AlertDialog(
-        title: const Text("How to Play"),
-        content: Column(
+    return _GameScrim(
+      child: _GameCard(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
-            Center(
-              child: Image(
-                image: AssetImage('assets/images/logo.png'),
-                width: 72,
-                height: 72,
+          children: [
+            Image.asset(
+              'assets/images/logo.png',
+              width: 96,
+              height: 96,
+              filterQuality: FilterQuality.high,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              "Ant Squash",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.w800,
+                color: _brandInk,
               ),
             ),
-            SizedBox(height: 12),
-            Text("Welcome to Ant Squash!"),
-            SizedBox(height: 8),
-            Text("Instructions:"),
-            Text("• Tap ants and bugs to smash them."),
-            Text("• Each smash gives you 1 point."),
-            Text("• Protect the watermelon picnic."),
-            Text("• Reach a score of 30 to win."),
+            const SizedBox(height: 4),
+            const Text(
+              "Protect the picnic",
+              style: TextStyle(fontSize: 15, color: _brandMuted),
+            ),
+            const SizedBox(height: 20),
+            const _HowToRow(
+              icon: Icons.touch_app,
+              text: "Tap ants and bugs to smash them.",
+            ),
+            const _HowToRow(
+              icon: Icons.star,
+              text: "Each smash is 1 point.",
+            ),
+            const _HowToRow(
+              icon: Icons.shield,
+              text: "Don't let them reach the watermelon.",
+            ),
+            const _HowToRow(
+              icon: Icons.flag,
+              text: "Score 30 points to win.",
+            ),
+            const SizedBox(height: 24),
+            _PrimaryButton(label: "Start game", onPressed: game.startGame),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: game.startGame,
-            child: const Text("Start Game"),
+      ),
+    );
+  }
+}
+
+class _GameScrim extends StatelessWidget {
+  final Widget child;
+
+  const _GameScrim({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: const Color(0x99000000),
+      child: Center(child: child),
+    );
+  }
+}
+
+class _GameCard extends StatelessWidget {
+  final Widget child;
+
+  const _GameCard({required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 380),
+      child: Material(
+        color: _brandCream,
+        elevation: 8,
+        shadowColor: const Color(0x66000000),
+        borderRadius: BorderRadius.circular(24),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(28, 28, 28, 24),
+          child: child,
+        ),
+      ),
+    );
+  }
+}
+
+class _HowToRow extends StatelessWidget {
+  final IconData icon;
+  final String text;
+
+  const _HowToRow({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20, color: _brandGreen),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(
+                fontSize: 15,
+                height: 1.35,
+                color: _brandInk,
+              ),
+            ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _PrimaryButton extends StatelessWidget {
+  final String label;
+  final VoidCallback onPressed;
+
+  const _PrimaryButton({required this.label, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton(
+        onPressed: onPressed,
+        style: FilledButton.styleFrom(
+          backgroundColor: _brandGreen,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+        ),
+        child: Text(label),
+      ),
+    );
+  }
+}
+
+class _TextAction extends StatelessWidget {
+  final String label;
+  final VoidCallback onPressed;
+
+  const _TextAction({required this.label, required this.onPressed});
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      onPressed: onPressed,
+      style: TextButton.styleFrom(foregroundColor: _brandGreen),
+      child: Text(label),
     );
   }
 }
